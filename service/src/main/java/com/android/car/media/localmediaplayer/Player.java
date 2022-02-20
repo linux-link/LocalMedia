@@ -62,7 +62,7 @@ public class Player extends MediaSession.Callback {
     private static final float PLAYBACK_SPEED_STOPPED = 1.0f;
     private static final long PLAYBACK_POSITION_STOPPED = 0;
 
-    // Note: Queues loop around so next/previous are always available.
+    // 注意：队列循环，所以下一个/上一个总是可用的。
     private static final long PLAYING_ACTIONS = PlaybackState.ACTION_PAUSE
             | PlaybackState.ACTION_PLAY_FROM_MEDIA_ID | PlaybackState.ACTION_SKIP_TO_NEXT
             | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM;
@@ -98,8 +98,11 @@ public class Player extends MediaSession.Callback {
     public Player(Context context, MediaSession session, DataModel dataModel) {
         mContext = context;
         mDataModel = dataModel;
+        // 创建AudioManager
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+
         mSession = session;
+        // 创建SharedPreferences用于记录播放状态
         mSharedPrefs = context.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE);
 
         mShuffle = new CustomAction.Builder(SHUFFLE, context.getString(R.string.shuffle),
@@ -108,17 +111,18 @@ public class Player extends MediaSession.Callback {
         mMediaPlayer = new MediaPlayer();
         mMediaPlayer.reset();
         mMediaPlayer.setOnCompletionListener(mOnCompletionListener);
+
+        // 初始化播放器状态，这里设定为error状态
         mErrorState = new PlaybackState.Builder()
                 .setState(PlaybackState.STATE_ERROR, 0, 0)
                 .setErrorMessage(context.getString(R.string.playback_error))
                 .build();
 
+        // 初始化Notification
         mNotificationManager =
                 (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-
-        // There are 2 forms of the media notification, when playing it needs to show the controls
-        // to pause & skip whereas when paused it needs to show controls to play & skip. Setup
-        // pre-populated builders for both of these up front.
+        // 媒体通知有两种形式，播放时需要显示暂停和跳过的控件，暂停时需要显示播放和跳过的控件。
+        // 预先为这两个设置预先填充的构建器。
         Notification.Action prevAction = makeNotificationAction(
                 LocalMediaBrowserService.ACTION_PREV, R.drawable.ic_prev, R.string.prev);
         Notification.Action nextAction = makeNotificationAction(
@@ -128,7 +132,7 @@ public class Player extends MediaSession.Callback {
         Notification.Action pauseAction = makeNotificationAction(
                 LocalMediaBrowserService.ACTION_PAUSE, R.drawable.ic_pause, R.string.pause);
 
-        // While playing, you need prev, pause, next.
+        // 播放时，需要上一个，暂停，下一个。
         mPlayingNotificationBuilder = new Notification.Builder(context)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setSmallIcon(R.drawable.ic_sd_storage_black)
@@ -136,7 +140,7 @@ public class Player extends MediaSession.Callback {
                 .addAction(pauseAction)
                 .addAction(nextAction);
 
-        // While paused, you need prev, play, next.
+        // 暂停时，需要上一个，播放，下一个。
         mPausedNotificationBuilder = new Notification.Builder(context)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setSmallIcon(R.drawable.ic_sd_storage_black)
@@ -145,6 +149,7 @@ public class Player extends MediaSession.Callback {
                 .addAction(nextAction);
     }
 
+    // 创建 Notification.Action
     private Notification.Action makeNotificationAction(String action, int iconId, int stringId) {
         PendingIntent intent = PendingIntent.getBroadcast(mContext, REQUEST_CODE,
                 new Intent(action), PendingIntent.FLAG_UPDATE_CURRENT);
@@ -154,28 +159,90 @@ public class Player extends MediaSession.Callback {
         return notificationAction;
     }
 
-    private boolean requestAudioFocus(Runnable onSuccess) {
-        int result = mAudioManager.requestAudioFocus(mAudioFocusListener, AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN);
-        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            onSuccess.run();
-            return true;
-        }
-        Log.e(TAG, "Failed to acquire audio focus");
-        return false;
-    }
-
     @Override
     public void onPlay() {
         super.onPlay();
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "onPlay");
         }
-        // Check permissions every time we try to play
+        // 每次尝试播放媒体时都要检查权限
         if (!Utils.hasRequiredPermissions(mContext)) {
             setMissingPermissionError();
         } else {
             requestAudioFocus(() -> resumePlayback());
+        }
+    }
+
+    // 权限检查错误
+    private void setMissingPermissionError() {
+        // 启动权限申请用的Activity
+        Intent prefsIntent = new Intent();
+        prefsIntent.setClass(mContext, PermissionsActivity.class);
+        prefsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent pendingIntent = PendingIntent.getActivity(mContext, 0, prefsIntent, 0);
+
+        // 将播放状态设定未ERROR
+        Bundle extras = new Bundle();
+        extras.putString(Utils.ERROR_RESOLUTION_ACTION_LABEL,
+                mContext.getString(R.string.permission_error_resolve));
+        extras.putParcelable(Utils.ERROR_RESOLUTION_ACTION_INTENT, pendingIntent);
+        PlaybackState state = new PlaybackState.Builder()
+                .setState(PlaybackState.STATE_ERROR, 0, 0)
+                .setErrorMessage(mContext.getString(R.string.permission_error))
+                .setExtras(extras)
+                .build();
+        mSession.setPlaybackState(state);
+    }
+
+    private void resumePlayback() {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "resumePlayback()");
+        }
+        // 更新播放状态
+        updatePlaybackStatePlaying();
+        if (!mMediaPlayer.isPlaying()) {
+            mMediaPlayer.start();
+        }
+    }
+
+    @Override
+    public void onPlayFromMediaId(String mediaId, Bundle extras) {
+        super.onPlayFromMediaId(mediaId, extras);
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onPlayFromMediaId mediaId" + mediaId + " extras=" + extras);
+        }
+        requestAudioFocus(() -> startPlayback(mediaId));
+    }
+
+    private void startPlayback(String key) {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "startPlayback()");
+        }
+        List<QueueItem> queue = mDataModel.getQueue();
+        int idx = 0;
+        int foundIdx = -1;
+        for (QueueItem item : queue) {
+            if (item.getDescription().getMediaId().equals(key)) {
+                foundIdx = idx;
+                break;
+            }
+            idx++;
+        }
+        if (foundIdx == -1) {
+            mSession.setPlaybackState(mErrorState);
+            return;
+        }
+        mQueue = new ArrayList<>(queue);
+        mCurrentQueueIdx = foundIdx;
+        QueueItem current = mQueue.get(mCurrentQueueIdx);
+        String path = current.getDescription().getExtras().getString(DataModel.PATH_KEY);
+        MediaMetadata metadata = mDataModel.getMetadata(current.getDescription().getMediaId());
+        updateSessionQueueState();
+        try {
+            play(path, metadata);
+        } catch (IOException e) {
+            Log.e(TAG, "Playback failed.", e);
+            mSession.setPlaybackState(mErrorState);
         }
     }
 
@@ -186,7 +253,193 @@ public class Player extends MediaSession.Callback {
             Log.d(TAG, "onPause");
         }
         pausePlayback();
+        // 放弃音频焦点
         mAudioManager.abandonAudioFocus(mAudioFocusListener);
+    }
+
+    private void pausePlayback() {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "pausePlayback()");
+        }
+        long currentPosition = 0;
+        if (mMediaPlayer.isPlaying()) {
+            currentPosition = mMediaPlayer.getCurrentPosition();
+            mMediaPlayer.pause();
+        }
+        // 更新播放状态
+        PlaybackState state = new PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PAUSED, currentPosition, PLAYBACK_SPEED_STOPPED)
+                .setActions(PAUSED_ACTIONS)
+                .addCustomAction(mShuffle)
+                .setActiveQueueItemId(mQueue.get(mCurrentQueueIdx).getQueueId())
+                .build();
+        mSession.setPlaybackState(state);
+        // 更新媒体的Notification状态。
+        postMediaNotification(mPausedNotificationBuilder);
+    }
+
+    @Override
+    public void onSkipToNext() {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onSkipToNext()");
+        }
+        safeAdvance();
+    }
+
+    private void safeAdvance() {
+        try {
+            advance();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to advance.", e);
+            mSession.setPlaybackState(mErrorState);
+        }
+    }
+
+    private void advance() throws IOException {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "advance()");
+        }
+        // 如果存在，请转到下一首歌曲。
+        // 请注意，如果您要支持无缝播放，则必须更改此代码，
+        // 以便拥有当前正在播放和正在加载的MediaPlayer，并在它们之间进行切换，同时还调用setNextMediaPlayer。
+        if (mQueue != null && !mQueue.isEmpty()) {
+            // 当我们跑出当前队列的末尾时，继续循环。
+            mCurrentQueueIdx = (mCurrentQueueIdx + 1) % mQueue.size();
+            playCurrentQueueIndex();
+        } else {
+            // 停止播放
+            stopPlayback();
+        }
+    }
+
+    private void playCurrentQueueIndex() throws IOException {
+        MediaDescription next = mQueue.get(mCurrentQueueIdx).getDescription();
+        String path = next.getExtras().getString(DataModel.PATH_KEY);
+        MediaMetadata metadata = mDataModel.getMetadata(next.getMediaId());
+        play(path, metadata);
+    }
+
+    private void play(String path, MediaMetadata metadata) throws IOException {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "play path=" + path + " metadata=" + metadata);
+        }
+        mMediaPlayer.reset();
+        mMediaPlayer.setDataSource(path);
+        mMediaPlayer.prepare();
+        if (metadata != null) {
+            mSession.setMetadata(metadata);
+        }
+        // 判断此时是否获取到音频焦点
+        boolean wasGrantedAudio = requestAudioFocus(() -> {
+            mMediaPlayer.start();
+            updatePlaybackStatePlaying();
+        });
+        if (!wasGrantedAudio) {
+            pausePlayback();
+        }
+    }
+
+    private void stopPlayback() {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "stopPlayback()");
+        }
+        if (mMediaPlayer.isPlaying()) {
+            mMediaPlayer.stop();
+        }
+        // 更新播放状态
+        PlaybackState state = new PlaybackState.Builder()
+                .setState(PlaybackState.STATE_STOPPED, PLAYBACK_POSITION_STOPPED,
+                        PLAYBACK_SPEED_STOPPED)
+                .setActions(STOPPED_ACTIONS)
+                .build();
+        mSession.setPlaybackState(state);
+    }
+
+    @Override
+    public void onSkipToPrevious() {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onSkipToPrevious()");
+        }
+        safeRetreat();
+    }
+
+    private void safeRetreat() {
+        try {
+            retreat();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to advance.", e);
+            mSession.setPlaybackState(mErrorState);
+        }
+    }
+
+    private void retreat() throws IOException {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "retreat()");
+        }
+        // 如果有下一首歌，请转到下一首。请注意，如果要支持无间隙播放，则必须更改此代码，
+        // 以便在调用setNextMediaPlayer的同时，拥有当前正在播放和正在加载的MediaPlayer，并在两者之间进行切换。
+        if (mQueue != null) {
+            // 当我们跑完当前队列的末尾时，继续循环。
+            mCurrentQueueIdx--;
+            if (mCurrentQueueIdx < 0) {
+                mCurrentQueueIdx = mQueue.size() - 1;
+            }
+            playCurrentQueueIndex();
+        } else {
+            stopPlayback();
+        }
+    }
+
+    @Override
+    public void onSkipToQueueItem(long id) {
+        try {
+            mCurrentQueueIdx = (int) id;
+            playCurrentQueueIndex();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to play.", e);
+            mSession.setPlaybackState(mErrorState);
+        }
+    }
+
+    @Override
+    public void onCustomAction(String action, Bundle extras) {
+        switch (action) {
+            case SHUFFLE:
+                shuffle();
+                break;
+            default:
+                Log.e(TAG, "Unhandled custom action: " + action);
+        }
+    }
+
+    /**
+     * 这是shuffle 的一个简单实现，之前播放的歌曲可能会在shuffle操作后重复。只能从主线程调用此函数。
+     * shuffle 可以理解为乱序播放。
+     */
+    private void shuffle() {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "Shuffling");
+        }
+        // 以随机的形式重建队列。
+        if (mQueue != null && mQueue.size() > 2) {
+            QueueItem current = mQueue.remove(mCurrentQueueIdx);
+            // 打乱队列顺序
+            Collections.shuffle(mQueue);
+            mQueue.add(0, current);
+            // QueueItem 包含一个队列 id，当用户选择当前播放列表时，该 id 用作键。
+            // 这意味着必须重建 QueueItems 以设置其新 ID。
+            for (int i = 0; i < mQueue.size(); i++) {
+                mQueue.set(i, new QueueItem(mQueue.get(i).getDescription(), i));
+            }
+            mCurrentQueueIdx = 0;
+            // 更新MediaSession队列状态
+            updateSessionQueueState();
+        }
+    }
+
+    private void updateSessionQueueState() {
+        mSession.setQueueTitle(mContext.getString(R.string.playlist));
+        mSession.setQueue(mQueue);
     }
 
     public void destroy() {
@@ -231,23 +484,38 @@ public class Player extends MediaSession.Callback {
         editor.commit();
     }
 
-    private void setMissingPermissionError() {
-        Intent prefsIntent = new Intent();
-        prefsIntent.setClass(mContext, PermissionsActivity.class);
-        prefsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        PendingIntent pendingIntent = PendingIntent.getActivity(mContext, 0, prefsIntent, 0);
+    public boolean maybeRestoreState() {
+        if (!Utils.hasRequiredPermissions(mContext)) {
+            setMissingPermissionError();
+            return false;
+        }
+        String serialized = mSharedPrefs.getString(CURRENT_PLAYLIST_KEY, null);
+        if (serialized == null) {
+            return false;
+        }
 
-        Bundle extras = new Bundle();
-        extras.putString(Utils.ERROR_RESOLUTION_ACTION_LABEL,
-                mContext.getString(R.string.permission_error_resolve));
-        extras.putParcelable(Utils.ERROR_RESOLUTION_ACTION_INTENT, pendingIntent);
+        try {
+            Playlist playlist = Playlist.parseFrom(Base64.getDecoder().decode(serialized));
+            if (!maybeRebuildQueue(playlist)) {
+                return false;
+            }
+            updateSessionQueueState();
 
-        PlaybackState state = new PlaybackState.Builder()
-                .setState(PlaybackState.STATE_ERROR, 0, 0)
-                .setErrorMessage(mContext.getString(R.string.permission_error))
-                .setExtras(extras)
-                .build();
-        mSession.setPlaybackState(state);
+            requestAudioFocus(() -> {
+                try {
+                    playCurrentQueueIndex();
+                    mMediaPlayer.seekTo(playlist.currentSongPosition);
+                    updatePlaybackStatePlaying();
+                } catch (IOException e) {
+                    Log.e(TAG, "Restored queue, but couldn't resume playback.");
+                }
+            });
+        } catch (IllegalArgumentException | InvalidProtocolBufferNanoException e) {
+            // Couldn't restore the playlist. Not the end of the world.
+            return false;
+        }
+
+        return true;
     }
 
     private boolean maybeRebuildQueue(Playlist playlist) {
@@ -287,98 +555,34 @@ public class Player extends MediaSession.Callback {
         return true;
     }
 
-    public boolean maybeRestoreState() {
-        if (!Utils.hasRequiredPermissions(mContext)) {
-            setMissingPermissionError();
-            return false;
+    // 更新播放状态
+    private void updatePlaybackStatePlaying() {
+        if (!mSession.isActive()) {
+            mSession.setActive(true);
         }
-        String serialized = mSharedPrefs.getString(CURRENT_PLAYLIST_KEY, null);
-        if (serialized == null) {
-            return false;
-        }
-
-        try {
-            Playlist playlist = Playlist.parseFrom(Base64.getDecoder().decode(serialized));
-            if (!maybeRebuildQueue(playlist)) {
-                return false;
-            }
-            updateSessionQueueState();
-
-            requestAudioFocus(() -> {
-                try {
-                    playCurrentQueueIndex();
-                    mMediaPlayer.seekTo(playlist.currentSongPosition);
-                    updatePlaybackStatePlaying();
-                } catch (IOException e) {
-                    Log.e(TAG, "Restored queue, but couldn't resume playback.");
-                }
-            });
-        } catch (IllegalArgumentException | InvalidProtocolBufferNanoException e) {
-            // Couldn't restore the playlist. Not the end of the world.
-            return false;
-        }
-
-        return true;
+        // 更新媒体会话中的状态。
+        CustomAction action = new CustomAction
+                .Builder("android.car.media.localmediaplayer.shuffle",
+                mContext.getString(R.string.shuffle),
+                R.drawable.shuffle)
+                .build();
+        PlaybackState state = new PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING,
+                        mMediaPlayer.getCurrentPosition(), PLAYBACK_SPEED)
+                .setActions(PLAYING_ACTIONS)
+                .addCustomAction(action)
+                .setActiveQueueItemId(mQueue.get(mCurrentQueueIdx).getQueueId())
+                .build();
+        mSession.setPlaybackState(state);
+        // 更新媒体样式的通知。
+        postMediaNotification(mPlayingNotificationBuilder);
     }
 
-    private void updateSessionQueueState() {
-        mSession.setQueueTitle(mContext.getString(R.string.playlist));
-        mSession.setQueue(mQueue);
-    }
-
-    private void startPlayback(String key) {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "startPlayback()");
-        }
-
-        List<QueueItem> queue = mDataModel.getQueue();
-        int idx = 0;
-        int foundIdx = -1;
-        for (QueueItem item : queue) {
-            if (item.getDescription().getMediaId().equals(key)) {
-                foundIdx = idx;
-                break;
-            }
-            idx++;
-        }
-
-        if (foundIdx == -1) {
-            mSession.setPlaybackState(mErrorState);
-            return;
-        }
-
-        mQueue = new ArrayList<>(queue);
-        mCurrentQueueIdx = foundIdx;
-        QueueItem current = mQueue.get(mCurrentQueueIdx);
-        String path = current.getDescription().getExtras().getString(DataModel.PATH_KEY);
-        MediaMetadata metadata = mDataModel.getMetadata(current.getDescription().getMediaId());
-        updateSessionQueueState();
-
-        try {
-            play(path, metadata);
-        } catch (IOException e) {
-            Log.e(TAG, "Playback failed.", e);
-            mSession.setPlaybackState(mErrorState);
-        }
-    }
-
-    private void resumePlayback() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "resumePlayback()");
-        }
-
-        updatePlaybackStatePlaying();
-
-        if (!mMediaPlayer.isPlaying()) {
-            mMediaPlayer.start();
-        }
-    }
-
+    // 更新媒体的Notification状态
     private void postMediaNotification(Notification.Builder builder) {
         if (mQueue == null) {
             return;
         }
-
         MediaDescription current = mQueue.get(mCurrentQueueIdx).getDescription();
         Notification notification = builder
                 .setStyle(new Notification.MediaStyle().setMediaSession(mSession.getSessionToken()))
@@ -390,225 +594,17 @@ public class Player extends MediaSession.Callback {
         mNotificationManager.notify(NOTIFICATION_ID, notification);
     }
 
-    private void updatePlaybackStatePlaying() {
-        if (!mSession.isActive()) {
-            mSession.setActive(true);
+    private boolean requestAudioFocus(Runnable onSuccess) {
+        int result = mAudioManager.requestAudioFocus(mAudioFocusListener, AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN);
+        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            onSuccess.run();
+            return true;
         }
-
-        // Update the state in the media session.
-        PlaybackState state = new PlaybackState.Builder()
-                .setState(PlaybackState.STATE_PLAYING,
-                        mMediaPlayer.getCurrentPosition(), PLAYBACK_SPEED)
-                .setActions(PLAYING_ACTIONS)
-                .addCustomAction(mShuffle)
-                .setActiveQueueItemId(mQueue.get(mCurrentQueueIdx).getQueueId())
-                .build();
-        mSession.setPlaybackState(state);
-
-        // Update the media styled notification.
-        postMediaNotification(mPlayingNotificationBuilder);
+        Log.e(TAG, "Failed to acquire audio focus");
+        return false;
     }
 
-    private void pausePlayback() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "pausePlayback()");
-        }
-
-        long currentPosition = 0;
-        if (mMediaPlayer.isPlaying()) {
-            currentPosition = mMediaPlayer.getCurrentPosition();
-            mMediaPlayer.pause();
-        }
-
-        PlaybackState state = new PlaybackState.Builder()
-                .setState(PlaybackState.STATE_PAUSED, currentPosition, PLAYBACK_SPEED_STOPPED)
-                .setActions(PAUSED_ACTIONS)
-                .addCustomAction(mShuffle)
-                .setActiveQueueItemId(mQueue.get(mCurrentQueueIdx).getQueueId())
-                .build();
-        mSession.setPlaybackState(state);
-
-        // Update the media styled notification.
-        postMediaNotification(mPausedNotificationBuilder);
-    }
-
-    private void stopPlayback() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "stopPlayback()");
-        }
-
-        if (mMediaPlayer.isPlaying()) {
-            mMediaPlayer.stop();
-        }
-
-        PlaybackState state = new PlaybackState.Builder()
-                .setState(PlaybackState.STATE_STOPPED, PLAYBACK_POSITION_STOPPED,
-                        PLAYBACK_SPEED_STOPPED)
-                .setActions(STOPPED_ACTIONS)
-                .build();
-        mSession.setPlaybackState(state);
-    }
-
-    private void advance() throws IOException {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "advance()");
-        }
-        // Go to the next song if one exists. Note that if you were to support gapless
-        // playback, you would have to change this code such that you had a currently
-        // playing and a loading MediaPlayer and juggled between them while also calling
-        // setNextMediaPlayer.
-
-        if (mQueue != null && !mQueue.isEmpty()) {
-            // Keep looping around when we run off the end of our current queue.
-            mCurrentQueueIdx = (mCurrentQueueIdx + 1) % mQueue.size();
-            playCurrentQueueIndex();
-        } else {
-            stopPlayback();
-        }
-    }
-
-    private void retreat() throws IOException {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "retreat()");
-        }
-        // Go to the next song if one exists. Note that if you were to support gapless
-        // playback, you would have to change this code such that you had a currently
-        // playing and a loading MediaPlayer and juggled between them while also calling
-        // setNextMediaPlayer.
-        if (mQueue != null) {
-            // Keep looping around when we run off the end of our current queue.
-            mCurrentQueueIdx--;
-            if (mCurrentQueueIdx < 0) {
-                mCurrentQueueIdx = mQueue.size() - 1;
-            }
-            playCurrentQueueIndex();
-        } else {
-            stopPlayback();
-        }
-    }
-
-    private void playCurrentQueueIndex() throws IOException {
-        MediaDescription next = mQueue.get(mCurrentQueueIdx).getDescription();
-        String path = next.getExtras().getString(DataModel.PATH_KEY);
-        MediaMetadata metadata = mDataModel.getMetadata(next.getMediaId());
-
-        play(path, metadata);
-    }
-
-    private void play(String path, MediaMetadata metadata) throws IOException {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "play path=" + path + " metadata=" + metadata);
-        }
-
-        mMediaPlayer.reset();
-        mMediaPlayer.setDataSource(path);
-        mMediaPlayer.prepare();
-
-        if (metadata != null) {
-            mSession.setMetadata(metadata);
-        }
-        boolean wasGrantedAudio = requestAudioFocus(() -> {
-            mMediaPlayer.start();
-            updatePlaybackStatePlaying();
-        });
-        if (!wasGrantedAudio) {
-            // player.pause() isn't needed since it should not actually be playing, the
-            // other steps like, updating the notification and play state are needed, thus we
-            // call the pause method.
-            pausePlayback();
-        }
-    }
-
-    private void safeAdvance() {
-        try {
-            advance();
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to advance.", e);
-            mSession.setPlaybackState(mErrorState);
-        }
-    }
-
-    private void safeRetreat() {
-        try {
-            retreat();
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to advance.", e);
-            mSession.setPlaybackState(mErrorState);
-        }
-    }
-
-    /**
-     * This is a naive implementation of shuffle, previously played songs may repeat after the
-     * shuffle operation. Only call this from the main thread.
-     */
-    private void shuffle() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "Shuffling");
-        }
-
-        // rebuild the the queue in a shuffled form.
-        if (mQueue != null && mQueue.size() > 2) {
-            QueueItem current = mQueue.remove(mCurrentQueueIdx);
-            Collections.shuffle(mQueue);
-            mQueue.add(0, current);
-            // A QueueItem contains a queue id that's used as the key for when the user selects
-            // the current play list. This means the QueueItems must be rebuilt to have their new
-            // id's set.
-            for (int i = 0; i < mQueue.size(); i++) {
-                mQueue.set(i, new QueueItem(mQueue.get(i).getDescription(), i));
-            }
-            mCurrentQueueIdx = 0;
-            updateSessionQueueState();
-        }
-    }
-
-    @Override
-    public void onPlayFromMediaId(String mediaId, Bundle extras) {
-        super.onPlayFromMediaId(mediaId, extras);
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "onPlayFromMediaId mediaId" + mediaId + " extras=" + extras);
-        }
-
-        requestAudioFocus(() -> startPlayback(mediaId));
-    }
-
-    @Override
-    public void onSkipToNext() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "onSkipToNext()");
-        }
-        safeAdvance();
-    }
-
-    @Override
-    public void onSkipToPrevious() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "onSkipToPrevious()");
-        }
-        safeRetreat();
-    }
-
-    @Override
-    public void onSkipToQueueItem(long id) {
-        try {
-            mCurrentQueueIdx = (int) id;
-            playCurrentQueueIndex();
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to play.", e);
-            mSession.setPlaybackState(mErrorState);
-        }
-    }
-
-    @Override
-    public void onCustomAction(String action, Bundle extras) {
-        switch (action) {
-            case SHUFFLE:
-                shuffle();
-                break;
-            default:
-                Log.e(TAG, "Unhandled custom action: " + action);
-        }
-    }
 
     private OnAudioFocusChangeListener mAudioFocusListener = new OnAudioFocusChangeListener() {
         @Override

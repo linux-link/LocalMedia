@@ -46,7 +46,6 @@ public class LocalMediaBrowserService extends MediaBrowserService {
     static final String ACTION_PREV = "com.android.car.media.localmediaplayer.ACTION_PREV";
 
     private BrowserRoot mRoot = new BrowserRoot(ROOT_ID, null);
-    List<MediaBrowser.MediaItem> mRootItems = new ArrayList<>();
 
     private DataModel mDataModel;
     private Player mPlayer;
@@ -59,7 +58,6 @@ public class LocalMediaBrowserService extends MediaBrowserService {
             if (intent.getAction() == null) {
                 return;
             }
-
             switch (intent.getAction()) {
                 case ACTION_PLAY:
                     mPlayer.onPlay();
@@ -78,6 +76,8 @@ public class LocalMediaBrowserService extends MediaBrowserService {
             }
         }
     };
+
+    List<MediaBrowser.MediaItem> mRootItems = new ArrayList<>();
 
     private void addRootItems() {
         MediaDescription folders = new MediaDescription.Builder()
@@ -112,17 +112,20 @@ public class LocalMediaBrowserService extends MediaBrowserService {
     @Override
     public void onCreate() {
         super.onCreate();
-
+        // 创建 DataModel。
         mDataModel = new DataModel(this);
+        // 创建 RootItem
         addRootItems();
+        // 创建 MediaSession
         mSession = new MediaSession(this, MEDIA_SESSION_TAG);
         setSessionToken(mSession.getSessionToken());
+        // 媒体播放器，同时也是 MediaSession.Callback
         mPlayer = new Player(this, mSession, mDataModel);
         mSession.setCallback(mPlayer);
         mSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS
                 | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
         mPlayer.maybeRestoreState();
-
+        // 广播，用于监听Notification的控制动作
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_PLAY);
         filter.addAction(ACTION_PAUSE);
@@ -154,7 +157,6 @@ public class LocalMediaBrowserService extends MediaBrowserService {
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "onLoadChildren parentId=" + parentId);
         }
-
         switch (parentId) {
             case ROOT_ID:
                 result.sendResult(mRootItems);

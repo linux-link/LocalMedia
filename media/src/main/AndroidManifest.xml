@@ -27,14 +27,17 @@
             <action android:name="android.media.browse.MediaBrowserService" />
         </intent>
     </queries>
+
     <application
         android:icon="@drawable/ic_music"
         android:label="Media Center"
         android:supportsRtl="true"
         android:theme="@style/Theme.Media">
+
         <meta-data
             android:name="android.car.application"
             android:resource="@xml/automotive_app_desc" />
+
         <activity
             android:name=".MediaActivity"
             android:launchMode="singleTop"
@@ -44,6 +47,7 @@
                 android:name="distractionOptimized"
                 android:value="true" />
         </activity>
+
         <!--  The Media center entry point that trampolines into MediaActivity or the radio app.  -->
         <activity
             android:name=".MediaDispatcherActivity"
@@ -57,11 +61,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.INFO" />
             </intent-filter>
+
             <intent-filter>
                 <action android:name="android.car.intent.action.MEDIA_TEMPLATE" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
         <service android:name=".service.MediaConnectorService">
             <intent-filter>
                 <action android:name="com.android.car.media.MEDIA_CONNECTION" />

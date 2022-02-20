@@ -45,26 +45,6 @@ import java.util.Set;
 public class DataModel {
     private static final String TAG = "LMBDataModel";
 
-    private static final Uri[] ALL_AUDIO_URI = new Uri[] {
-            MediaStore.Audio.Media.INTERNAL_CONTENT_URI,
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-    };
-
-    private static final Uri[] ALBUMS_URI = new Uri[] {
-            MediaStore.Audio.Albums.INTERNAL_CONTENT_URI,
-            MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI
-    };
-
-    private static final Uri[] ARTISTS_URI = new Uri[] {
-            MediaStore.Audio.Artists.INTERNAL_CONTENT_URI,
-            MediaStore.Audio.Artists.EXTERNAL_CONTENT_URI
-    };
-
-    private static final Uri[] GENRES_URI = new Uri[] {
-        MediaStore.Audio.Genres.INTERNAL_CONTENT_URI,
-        MediaStore.Audio.Genres.EXTERNAL_CONTENT_URI
-    };
-
     private static final String QUERY_BY_KEY_WHERE_CLAUSE =
             AudioColumns.ALBUM_KEY + "= ? or "
                     + AudioColumns.ARTIST_KEY + " = ? or "
@@ -89,10 +69,20 @@ public class DataModel {
         mResolver = context.getContentResolver();
     }
 
+    private static final Uri[] ALL_AUDIO_URI = new Uri[] {
+            MediaStore.Audio.Media.INTERNAL_CONTENT_URI,
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+    };
+
     public void onQueryByFolder(String parentId, Result<List<MediaItem>> result) {
         FilesystemListTask query = new FilesystemListTask(result, ALL_AUDIO_URI, mResolver);
         queryInBackground(result, query);
     }
+
+    private static final Uri[] ALBUMS_URI = new Uri[] {
+            MediaStore.Audio.Albums.INTERNAL_CONTENT_URI,
+            MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI
+    };
 
     public void onQueryByAlbum(String parentId, Result<List<MediaItem>> result) {
         QueryTask query = new QueryTask.Builder()
@@ -106,6 +96,11 @@ public class DataModel {
         queryInBackground(result, query);
     }
 
+    private static final Uri[] ARTISTS_URI = new Uri[] {
+            MediaStore.Audio.Artists.INTERNAL_CONTENT_URI,
+            MediaStore.Audio.Artists.EXTERNAL_CONTENT_URI
+    };
+
     public void onQueryByArtist(String parentId, Result<List<MediaItem>> result) {
         QueryTask query = new QueryTask.Builder()
                 .setResolver(mResolver)
@@ -117,6 +112,11 @@ public class DataModel {
                 .build();
         queryInBackground(result, query);
     }
+
+    private static final Uri[] GENRES_URI = new Uri[] {
+            MediaStore.Audio.Genres.INTERNAL_CONTENT_URI,
+            MediaStore.Audio.Genres.EXTERNAL_CONTENT_URI
+    };
 
     public void onQueryByGenre(String parentId, Result<List<MediaItem>> result) {
         QueryTask query = new QueryTask.Builder()
@@ -130,14 +130,11 @@ public class DataModel {
         queryInBackground(result, query);
     }
 
-    private void queryInBackground(Result<List<MediaItem>> result,
-            AsyncTask<Void, Void, Void> task) {
+    private void queryInBackground(Result<List<MediaItem>> result, AsyncTask<Void, Void, Void> task) {
         result.detach();
-
         if (mPendingTask != null) {
             mPendingTask.cancel(true);
         }
-
         mPendingTask = task;
         task.execute();
     }
@@ -195,26 +192,23 @@ public class DataModel {
     }
 
     /**
-     * Note: This clears out the queue. You should have a local copy of the queue before calling
-     * this method.
+     * 注意：这会清除队列。 在调用此方法之前，应该拥有队列的本地备份。
      */
     public void onQueryByKey(String lastCategory, String parentId, Result<List<MediaItem>> result) {
         mQueue.clear();
-
         QueryTask.Builder query = new QueryTask.Builder()
                 .setResolver(mResolver)
                 .setResult(result);
 
         if (LocalMediaBrowserService.GENRES_ID.equals(lastCategory)) {
-            // Genres come from a different table and don't use the where clause from the
-            // usual media table so we need to have this condition.
+            // Genre来自不同的表，并且不使用通常媒体表中的 where 子句，因此我们需要有这个条件。
             try {
                 long id = Long.parseLong(parentId);
                 query.setUri(new Uri[] {
                     MediaStore.Audio.Genres.Members.getContentUri(EXTERNAL, id),
                     MediaStore.Audio.Genres.Members.getContentUri(INTERNAL, id) });
             } catch (NumberFormatException e) {
-                // This should never happen.
+                // 这不应该发生。
                 Log.e(TAG, "Incorrect key type: " + parentId + ", sending empty result");
                 result.sendResult(new ArrayList<MediaItem>());
                 return;
@@ -233,10 +227,8 @@ public class DataModel {
         queryInBackground(result, query.build());
     }
 
-    // This async task is similar enough to all the others that it feels like it can be unified
-    // but is different enough that unifying it makes the code for both cases look really weird
-    // and over paramterized so at the risk of being a little more verbose, this is separated out
-    // in the name of understandability.
+    // 这个异步任务与所有其他任务非常相似，感觉它可以统一，但又足够不同，统一它会使这两种情况的代码看起来非常奇怪并且过度参数化，
+    // 因此有可能变得更加冗长，这是 以可理解性的名义分开.
     private static class FilesystemListTask extends AsyncTask<Void, Void, Void> {
         private static final String[] COLUMNS = { AudioColumns.DATA };
         private Result<List<MediaItem>> mResult;
@@ -253,17 +245,14 @@ public class DataModel {
         @Override
         protected Void doInBackground(Void... voids) {
             Set<String> paths = new HashSet<String>();
-
             Cursor cursor = null;
             for (Uri uri : mUris) {
                 try {
                     cursor = mResolver.query(uri, COLUMNS, null , null, null);
                     if (cursor != null) {
                         int pathColumn = cursor.getColumnIndex(AudioColumns.DATA);
-
                         while (cursor.moveToNext()) {
-                            // We want to de-dupe paths of each of the songs so we get just a list
-                            // of containing directories.
+                            // 我们想要对每首歌曲的路径进行重复数据删除，因此我们只得到一个包含目录的列表。
                             String fullPath = cursor.getString(pathColumn);
                             int fileNameStart = fullPath.lastIndexOf(File.separator);
                             if (fileNameStart < 0) {
@@ -275,7 +264,7 @@ public class DataModel {
                         }
                     }
                 } catch (SQLiteException e) {
-                    Log.e(TAG, "Failed to execute query " + e);  // Stack trace is noisy.
+                    Log.e(TAG, "Failed to execute query " + e);
                 } finally {
                     if (cursor != null) {
                         cursor.close();
@@ -283,14 +272,13 @@ public class DataModel {
                 }
             }
 
-            // Take the list of deduplicated directories and put them into the results list with
-            // the full directory path as the key so we can match on it later.
+            // 取出去重目录列表，并将它们放入结果列表中，以完整目录路径为键，以便我们稍后进行匹配。
             List<MediaItem> results = new ArrayList<>();
             for (String path : paths) {
                 int dirNameStart = path.lastIndexOf(File.separator) + 1;
                 String dirName = path.substring(dirNameStart, path.length());
                 MediaDescription description = new MediaDescription.Builder()
-                        .setMediaId(path + "%")  // Used in a like query.
+                        .setMediaId(path + "%")  // 在类似查询中使用。
                         .setTitle(dirName)
                         .setSubtitle(path)
                         .build();
@@ -365,8 +353,7 @@ public class DataModel {
                             MediaDescription description = builder.build();
                             results.add(new MediaItem(description, mFlags));
 
-                            // We rebuild the queue here so if the user selects the item then we
-                            // can immediately use this queue.
+                            // 我们在这里重建队列，所以如果用户选择项目，那么我们可以立即使用这个队列。
                             if (mQueue != null) {
                                 mQueue.add(new QueueItem(description, idx));
                             }
@@ -374,12 +361,11 @@ public class DataModel {
                         }
                     }
                 } catch (SQLiteException e) {
-                    // Sometimes tables don't exist if the media scanner hasn't seen data of that
-                    // type yet. For example, the genres table doesn't seem to exist at all until
-                    // the first time a song with a genre is encountered. If we hit an exception,
-                    // the result is never sent causing the other end to hang up, which is a bad
-                    // thing. We can instead just be resilient and return an empty list.
-                    Log.i(TAG, "Failed to execute query " + e);  // Stack trace is noisy.
+                    // 有时，如果媒体扫描仪尚未看到该类型的数据，则表不存在。
+                    // 例如，在第一次遇到具有流派的歌曲之前，流派表似乎根本不存在。
+                    // 如果我们遇到异常，则永远不会发送结果导致另一端挂断，这是一件坏事。
+                    // 相反，我们可以保持弹性并返回一个空列表。
+                    Log.i(TAG, "Failed to execute query " + e);
                 } finally {
                     if (cursor != null) {
                         cursor.close();
@@ -388,11 +374,11 @@ public class DataModel {
             }
 
             mResult.sendResult(results);
-            return null;  // Ignored.
+            return null;  // 忽略.
         }
 
         //
-        // Boilerplate Alert!
+        // 只是示例
         //
         public static class Builder {
             private Result<List<MediaItem>> mResult;

@@ -9,3 +9,4 @@ dependencyResolutionManagement {
 rootProject.name = "LocalMedia"
 include ':service'
 include ':media'
+include ':CommonMedia'

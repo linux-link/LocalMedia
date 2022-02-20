@@ -24,8 +24,7 @@ public class PermissionsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Check again, just in case.
+        // 再次检查，以防万一。
         if (!Utils.hasRequiredPermissions(this)) {
             requestPermissions(Utils.PERMISSIONS, REQUEST_CODE);
         } else {
@@ -35,9 +34,8 @@ public class PermissionsActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
-        // The media browser displays an error anyway if it doesn't have the required permissions
-        // so we call finish irrespective of the grant result. This whole activity exists just
-        // for the purpose of trampolining the permissions request anyway.
+        // 如果媒体浏览器没有所需的权限，它仍会显示错误，因此无论授予结果如何，我们都会调用finish。
+        // 无论如何，这整个活动的存在只是为了实现权限请求。
         finish();
     }
 }
