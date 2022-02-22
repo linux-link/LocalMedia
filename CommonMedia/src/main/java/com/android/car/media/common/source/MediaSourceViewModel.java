@@ -37,13 +37,14 @@ import com.android.car.media.common.source.MediaBrowserConnector.BrowsingState;
 import java.util.Objects;
 
 /**
- * Contains observable data needed for displaying playback and browse UI.
- * MediaSourceViewModel is a singleton tied to the application to provide a single source of truth.
+ * 包含显示回放和浏览用户界面所需的可观察数据。
+ * MediaSourceViewModel是一个绑定到应用程序的单一组件，用于提供单一的真相来源。
  */
 public class MediaSourceViewModel extends AndroidViewModel {
     private static final String TAG = "MediaSourceViewModel";
 
     private static MediaSourceViewModel[] sInstances = new MediaSourceViewModel[2];
+
     private final Car mCar;
     private CarMediaManager mCarMediaManager;
 
@@ -80,7 +81,7 @@ public class MediaSourceViewModel extends AndroidViewModel {
     }
 
     /**
-     * Create a new instance of MediaSourceViewModel
+     * 创建MediaSourceViewModel的新实例
      *
      * @see AndroidViewModel
      */

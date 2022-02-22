@@ -33,7 +33,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Abstract class to factorize most of the error handling logic.
+ * 用于分解大多数错误处理逻辑的抽象类。
  */
 public abstract class PlaybackErrorsHelper {
 

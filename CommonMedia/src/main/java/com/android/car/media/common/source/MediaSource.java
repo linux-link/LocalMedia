@@ -43,8 +43,7 @@ import java.util.Objects;
 
 
 /**
- * This represents a source of media content. It provides convenient methods to access media source
- * metadata, such as application name and icon.
+ * 这代表媒体内容的来源。 它提供了方便的方法来访问媒体源元数据，例如应用程序名称和图标。
  */
 public class MediaSource {
     private static final String TAG = "MediaSource";

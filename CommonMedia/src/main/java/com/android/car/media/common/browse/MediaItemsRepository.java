@@ -49,8 +49,8 @@ import java.util.stream.Collectors;
 
 
 /**
- * Fulfills media items search and children queries. The latter also provides the last list of
- * results alongside the new list so that differences can be calculated and acted upon.
+ * 完成媒体项目搜索和子查询。
+ * 后者还提供了新列表旁边的最后一个结果列表，以便可以计算差异并对其采取行动。
  */
 public class MediaItemsRepository {
     private static final String TAG = "MediaItemsRepository";
@@ -258,10 +258,10 @@ public class MediaItemsRepository {
     }
 
     private final SubscriptionCallback mBrowseCallback = new SubscriptionCallback() {
+
         @Override
         public void onChildrenLoaded(@NonNull String parentId,
                 @NonNull List<MediaBrowserCompat.MediaItem> children) {
-
             onBrowseData(parentId, children.stream()
                     .filter(Objects::nonNull)
                     .map(MediaItemMetadata::new)

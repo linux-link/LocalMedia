@@ -61,9 +61,8 @@ import com.android.car.media.common.source.MediaSourceViewModel;
 import java.util.List;
 
 /**
- * {@link Fragment} that can be used to display and control the currently playing media item. Its
- * requires the android.Manifest.permission.MEDIA_CONTENT_CONTROL permission be held by the hosting
- * application.
+ * {@link Fragment} 可用于显示和控制当前播放的媒体项。
+ * 它要求托管应用程序持有 android.Manifest.permission.MEDIA_CONTENT_CONTROL 权限。
  */
 public class PlaybackFragment extends Fragment {
     private static final String TAG = "PlaybackFragmentWidget";
@@ -87,22 +86,47 @@ public class PlaybackFragment extends Fragment {
         FragmentActivity activity = requireActivity();
         mCar = Car.createCar(activity);
         mCarPackageManager = (CarPackageManager) mCar.getCarManager(Car.PACKAGE_SERVICE);
-
+        // 获取 PlaybackViewModel 和 MediaSourceViewModel
         Application application = activity.getApplication();
         mPlaybackViewModel = PlaybackViewModel.get(application, MEDIA_SOURCE_MODE_PLAYBACK);
         mMediaSourceViewModel = MediaSourceViewModel.get(application, MEDIA_SOURCE_MODE_PLAYBACK);
         mAppSelectorIntent = MediaSource.getSourceSelectorIntent(getContext(), true);
-
+        // PlaybackFragment持有的内部ViewModel
         mInnerViewModel = ViewModelProviders.of(activity).get(ViewModel.class);
         mInnerViewModel.init(activity, mMediaSourceViewModel, mPlaybackViewModel,
                 MediaItemsRepository.get(application, MEDIA_SOURCE_MODE_PLAYBACK));
 
         View view = inflater.inflate(R.layout.playback_fragment, container, false);
 
+        // 用于分解大多数错误处理逻辑的抽象类。
         mPlaybackErrorViewController = new PlaybackErrorViewController(view);
-
+        // 基本播放控制栏（不显示任何元数据）。
         PlaybackControlsActionBar playbackControls = view.findViewById(R.id.playback_controls);
         playbackControls.setModel(mPlaybackViewModel, getViewLifecycleOwner());
+
+        // 处理错误场景
+        mErrorsHelper = new PlaybackErrorsHelper(activity) {
+
+            @Override
+            public void handleNewPlaybackState(String displayedMessage, PendingIntent intent,
+                                               String label) {
+                mIsFatalError = false;
+                if (!TextUtils.isEmpty(displayedMessage)) {
+                    Boolean hasChildren = mInnerViewModel.getBrowseTreeHasChildren().getValue();
+                    if (hasChildren != null && !hasChildren) {
+                        boolean isDistractionOptimized =
+                                intent != null && CarPackageManagerUtils.isDistractionOptimized(mCarPackageManager, intent);
+                        mPlaybackErrorViewController.setError(displayedMessage, label, intent,
+                                isDistractionOptimized);
+                        mIsFatalError = true;
+                    }
+                }
+
+                if (!mIsFatalError) {
+                    mPlaybackErrorViewController.hideError();
+                }
+            }
+        };
         mPlaybackViewModel.getPlaybackStateWrapper().observe(getViewLifecycleOwner(),
                 state -> {
                     ViewUtils.setVisible(playbackControls,
@@ -112,6 +136,14 @@ public class PlaybackFragment extends Fragment {
                     }
                 });
 
+        // 处理 SubscriptionCallback.onChildrenLoaded 中回调的数据
+        mInnerViewModel.getBrowseTreeHasChildren().observe(getViewLifecycleOwner(),
+                this::onBrowseTreeHasChildrenChanged);
+
+        // 处理媒体源变更
+        mMediaSourceViewModel.getPrimaryMediaSource().observe(getViewLifecycleOwner(),
+                this::onMediaSourceChanged);
+        // UI 初始化
         TextView appName = view.findViewById(R.id.app_name);
         mInnerViewModel.getAppName().observe(getViewLifecycleOwner(), appName::setText);
 
@@ -138,12 +170,6 @@ public class PlaybackFragment extends Fragment {
             }
         });
 
-        mInnerViewModel.getBrowseTreeHasChildren().observe(getViewLifecycleOwner(),
-                this::onBrowseTreeHasChildrenChanged);
-
-        mMediaSourceViewModel.getPrimaryMediaSource().observe(getViewLifecycleOwner(),
-                this::onMediaSourceChanged);
-
         View playbackScrim = view.findViewById(R.id.playback_scrim);
         playbackScrim.setOnClickListener(
                 // Let the Media center trampoline figure out what to open.
@@ -168,30 +194,6 @@ public class PlaybackFragment extends Fragment {
                         item != null ? item.getArtworkKey() : null));
         appSelector.setVisibility(mAppSelectorIntent != null ? View.VISIBLE : View.GONE);
         appSelector.setOnClickListener(e -> getContext().startActivity(mAppSelectorIntent));
-
-        mErrorsHelper = new PlaybackErrorsHelper(activity) {
-
-            @Override
-            public void handleNewPlaybackState(String displayedMessage, PendingIntent intent,
-                    String label) {
-                mIsFatalError = false;
-                if (!TextUtils.isEmpty(displayedMessage)) {
-                    Boolean hasChildren = mInnerViewModel.getBrowseTreeHasChildren().getValue();
-                    if (hasChildren != null && !hasChildren) {
-                        boolean isDistractionOptimized =
-                                intent != null && CarPackageManagerUtils.isDistractionOptimized(
-                                        mCarPackageManager, intent);
-                        mPlaybackErrorViewController.setError(displayedMessage, label, intent,
-                                isDistractionOptimized);
-                        mIsFatalError = true;
-                    }
-                }
-
-                if (!mIsFatalError) {
-                    mPlaybackErrorViewController.hideError();
-                }
-            }
-        };
 
         return view;
     }
@@ -245,11 +247,15 @@ public class PlaybackFragment extends Fragment {
             mMediaSourceViewModel = mediaSourceViewModel;
             mMediaItemsRepository = mediaItemsRepository;
             mMediaSource = mMediaSourceViewModel.getPrimaryMediaSource();
+            // 媒体源APP名字
             mAppName = mapNonNull(mMediaSource, MediaSource::getDisplayName);
+            // 媒体源APP图标
             mAppIcon = mapNonNull(mMediaSource, MediaSource::getCroppedPackageIcon);
+            // 当前播放的媒体的title
             mTitle = mapNonNull(playbackViewModel.getMetadata(), MediaItemMetadata::getTitle);
+            // 当前播放的媒体的子title
             mSubtitle = mapNonNull(playbackViewModel.getMetadata(), MediaItemMetadata::getArtist);
-
+            // 媒体列表数据
             mMediaItemsRepository.getRootMediaItems()
                     .observe(activity, this::onRootMediaItemsUpdate);
         }
@@ -279,7 +285,6 @@ public class PlaybackFragment extends Fragment {
                 mBrowseTreeHasChildren.setValue(null);
                 return;
             }
-
             List<MediaItemMetadata> items =
                     MediaBrowserViewModelImpl.filterItems(/*forRoot*/ true, data.getData());
 

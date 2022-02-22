@@ -376,8 +376,9 @@ public class Player extends MediaSession.Callback {
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "retreat()");
         }
-        // 如果有下一首歌，请转到下一首。请注意，如果要支持无间隙播放，则必须更改此代码，
-        // 以便在调用setNextMediaPlayer的同时，拥有当前正在播放和正在加载的MediaPlayer，并在两者之间进行切换。
+        // 如果有下一首歌，请转到下一首。
+        // 请注意，如果要支持无间隙播放，则必须更改此代码，以便在调用setNextMediaPlayer的同时，
+        // 拥有当前正在播放和正在加载的MediaPlayer，并在两者之间进行切换。
         if (mQueue != null) {
             // 当我们跑完当前队列的末尾时，继续循环。
             mCurrentQueueIdx--;

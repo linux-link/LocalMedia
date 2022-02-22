@@ -28,7 +28,7 @@ import com.android.car.apps.common.ControlBar;
 import com.android.car.media.common.playback.PlaybackViewModel;
 
 /**
- * Basic playback control bar (doesn't display any metadata).
+ * 基本播放控制栏（不显示任何元数据）。
  */
 public class PlaybackControlsActionBar extends ControlBar {
 

@@ -63,12 +63,11 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * ViewModel for media playback.
+ * 用于媒体播放的 ViewModel。
  * <p>
- * Observes changes to the provided MediaController to expose playback state and metadata
- * observables.
+ * 观察对提供的 MediaController 的更改以公开播放状态和元数据 observables。
  * <p>
- * PlaybackViewModel is a "singleton" tied to the application to provide a single source of truth.
+ * PlaybackViewModel 是与应用程序绑定的“单例”，以提供单一的事实来源。
  */
 public class PlaybackViewModel extends AndroidViewModel {
     private static final String TAG = "PlaybackViewModel";
@@ -79,7 +78,9 @@ public class PlaybackViewModel extends AndroidViewModel {
 
     private static PlaybackViewModel[] sInstances = new PlaybackViewModel[2];
 
-    /** Returns the PlaybackViewModel "singleton" tied to the application for the given mode. */
+    /**
+     * 返回给定模式下绑定到应用程序的PlaybackViewModel的单例。
+     */
     public static PlaybackViewModel get(@NonNull Application application, int mode) {
         if (sInstances[mode] == null) {
             sInstances[mode] = new PlaybackViewModel(application, mode);
@@ -88,7 +89,7 @@ public class PlaybackViewModel extends AndroidViewModel {
     }
 
     /**
-     * Possible main actions.
+     * 可能的action
      */
     @IntDef({ACTION_PLAY, ACTION_STOP, ACTION_PAUSE, ACTION_DISABLED})
     @Retention(RetentionPolicy.SOURCE)
@@ -96,7 +97,7 @@ public class PlaybackViewModel extends AndroidViewModel {
     }
 
     /**
-     * Main action is disabled. The source can't play media at this time
+     * main action已禁用。无法播放媒体源
      */
     public static final int ACTION_DISABLED = 0;
     /**
@@ -120,8 +121,9 @@ public class PlaybackViewModel extends AndroidViewModel {
         MediaControllerCompat getControllerForBrowser(@NonNull MediaBrowserCompat browser);
     }
 
-
-    /** Needs to be a MediaMetadata because the compat class doesn't implement equals... */
+    /**
+     * 需要是 MediaMetadata 因为 compat 类没有实现 equals...
+     */
     private static final MediaMetadata EMPTY_MEDIA_METADATA = new MediaMetadata.Builder().build();
 
     private final MediaControllerCallback mMediaControllerCallback = new MediaControllerCallback();
@@ -133,7 +135,7 @@ public class PlaybackViewModel extends AndroidViewModel {
 
     private final MutableLiveData<MediaItemMetadata> mMetadata = dataOf(null);
 
-    // Filters out queue items with no description or title and converts them to MediaItemMetadata
+    // 过滤掉没有描述或标题的队列项目，并将它们转换为 MediaItemMetadata
     private final MutableLiveData<List<MediaItemMetadata>> mSanitizedQueue = dataOf(null);
 
     private final MutableLiveData<Boolean> mHasQueue = dataOf(null);
@@ -152,15 +154,22 @@ public class PlaybackViewModel extends AndroidViewModel {
     private final InputFactory mInputFactory;
 
     private PlaybackViewModel(Application application, int mode) {
-        this(application, MediaSourceViewModel.get(application, mode).getBrowsingState(),
-                browser -> new MediaControllerCompat(application, browser.getSessionToken()));
+        this(application,
+                MediaSourceViewModel.get(application, mode).getBrowsingState(),
+                new InputFactory() {
+                    @Override
+                    public MediaControllerCompat getControllerForBrowser(@NonNull MediaBrowserCompat browser) {
+                        return new MediaControllerCompat(application, browser.getSessionToken());
+                    }
+                }
+        );
     }
 
     @VisibleForTesting
     public PlaybackViewModel(Application application,
-            LiveData<MediaBrowserConnector.BrowsingState> browsingState, InputFactory factory) {
+                             LiveData<MediaBrowserConnector.BrowsingState> browsingState, InputFactory factory) {
         super(application);
-        mInputFactory =  factory;
+        mInputFactory = factory;
         mColorsFactory = new MediaSourceColors.Factory(application);
         browsingState.observeForever(mMediaBrowsingObserver);
     }
@@ -173,8 +182,7 @@ public class PlaybackViewModel extends AndroidViewModel {
     }
 
     /**
-     * Returns a LiveData that emits a MediaItemMetadata of the current media item in the session
-     * managed by the provided {@link MediaControllerCompat}.
+     * 返回一个 LiveData，它发出由提供的 {@link MediaControllerCompat} 管理的会话中当前媒体项的 MediaItemMetadata。
      */
     public LiveData<MediaItemMetadata> getMetadata() {
         return mMetadata;
@@ -210,7 +218,9 @@ public class PlaybackViewModel extends AndroidViewModel {
         return mPlaybackControls;
     }
 
-    /** Returns a {@PlaybackStateWrapper} live data. */
+    /**
+     * Returns a {@PlaybackStateWrapper} live data.
+     */
     public LiveData<PlaybackStateWrapper> getPlaybackStateWrapper() {
         return mPlaybackStateWrapper;
     }
@@ -250,8 +260,7 @@ public class PlaybackViewModel extends AndroidViewModel {
                 return;
             }
 
-            // Reset the old controller if any, unregistering the callback when browsing is
-            // not suspended (crashed).
+            // 重置旧控制器（如果有），在浏览未暂停（崩溃）时取消注册回调。
             if (mMediaController != null) {
                 switch (newBrowsingState.mConnectionStatus) {
                     case DISCONNECTING:
@@ -264,9 +273,7 @@ public class PlaybackViewModel extends AndroidViewModel {
                         setMediaController(null);
                 }
             }
-
             mBrowsingState = newBrowsingState;
-
             if (mBrowsingState.mConnectionStatus == ConnectionStatus.CONNECTED) {
                 setMediaController(mInputFactory.getControllerForBrowser(mBrowsingState.mBrowser));
             }
@@ -280,10 +287,9 @@ public class PlaybackViewModel extends AndroidViewModel {
 
             if (mMediaController != null) {
                 mMediaController.registerCallback(this);
-
                 mColors.setValue(mColorsFactory.extractColors(mediaController.getPackageName()));
 
-                // The apps don't always send updates so make sure we fetch the most recent values.
+                // 应用程序并不总是发送更新，因此请确保我们获取最新的值。
                 onMetadataChanged(mMediaController.getMetadata());
                 onPlaybackStateChanged(mMediaController.getPlaybackState());
                 onQueueChanged(mMediaController.getQueue());
@@ -302,17 +308,15 @@ public class PlaybackViewModel extends AndroidViewModel {
         @Override
         public void onSessionDestroyed() {
             Log.w(TAG, "onSessionDestroyed");
-            // Bypass the unregisterCallback as the controller is dead.
-            // TODO: consider keeping track of orphaned callbacks in case they are resurrected...
+            // 在MediaSession销毁时unregisterCallback。
+            //TODO：考虑跟踪孤立的回调，以防它们复活......
             setMediaController(null);
         }
 
         @Override
         public void onMetadataChanged(@Nullable MediaMetadataCompat mmdCompat) {
-            // MediaSession#setMetadata builds an empty MediaMetadata when its argument is null,
-            // yet MediaMetadataCompat doesn't implement equals... so if the given mmdCompat's
-            // MediaMetadata equals EMPTY_MEDIA_METADATA, set mMediaMetadata to null to keep
-            // the code simpler everywhere else.
+            // MediaSession#setMetadata 在其参数为 null 时构建一个空的 MediaMetadata，但 MediaMetadataCompat 不实现 equals...
+            // 因此，如果给定的 mmdCompat 的 MediaMetadata 等于 EMPTY_MEDIA_METADATA，请将 mMediaMetadata 设置为 null 以使代码在其他任何地方都更简单。
             if ((mmdCompat != null) && EMPTY_MEDIA_METADATA.equals(mmdCompat.getMediaMetadata())) {
                 mMediaMetadata = null;
             } else {
@@ -333,12 +337,11 @@ public class PlaybackViewModel extends AndroidViewModel {
         public void onQueueChanged(@Nullable List<MediaSessionCompat.QueueItem> queue) {
             List<MediaItemMetadata> filtered = queue == null ? Collections.emptyList()
                     : queue.stream()
-                            .filter(item -> item != null
-                                    && item.getDescription() != null
-                                    && item.getDescription().getTitle() != null)
-                            .map(MediaItemMetadata::new)
-                            .collect(Collectors.toList());
-
+                    .filter(item -> item != null
+                            && item.getDescription() != null
+                            && item.getDescription().getTitle() != null)
+                    .map(MediaItemMetadata::new)
+                    .collect(Collectors.toList());
             mSanitizedQueue.setValue(filtered);
             mHasQueue.setValue(filtered.size() > 1);
         }
@@ -359,7 +362,9 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
     }
 
-    /** Convenient extension of {@link PlaybackStateCompat}. */
+    /**
+     * {@link PlaybackStateCompat} 的扩展。
+     */
     public static final class PlaybackStateWrapper {
 
         private final MediaControllerCompat mMediaController;
@@ -368,20 +373,24 @@ public class PlaybackViewModel extends AndroidViewModel {
         private final PlaybackStateCompat mState;
 
         PlaybackStateWrapper(@NonNull MediaControllerCompat mediaController,
-                @Nullable MediaMetadataCompat metadata, @NonNull PlaybackStateCompat state) {
+                             @Nullable MediaMetadataCompat metadata, @NonNull PlaybackStateCompat state) {
             mMediaController = mediaController;
             mMetadata = metadata;
             mState = state;
         }
 
-        /** Returns true if there's enough information in the state to show a UI for it. */
+        /**
+         * 如果状态中有足够的信息来显示它的 UI，则返回 true。
+         */
         public boolean shouldDisplay() {
             // STATE_NONE means no content to play.
             return mState.getState() != PlaybackStateCompat.STATE_NONE && ((mMetadata != null) || (
                     getMainAction() != ACTION_DISABLED));
         }
 
-        /** Returns the main action. */
+        /**
+         * 返回 主 action
+         */
         @Action
         public int getMainAction() {
             @Actions long actions = mState.getActions();
@@ -416,44 +425,51 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         /**
-         * Returns the currently supported playback actions
+         * 返回当前支持的播放动作
          */
         public long getSupportedActions() {
             return mState.getActions();
         }
 
         /**
-         * Returns the duration of the media item in milliseconds. The current position in this
-         * duration can be obtained by calling {@link #getProgress()}.
+         * 返回媒体项的持续时间（以毫秒为单位）。 可以通过调用 {@link #getProgress()} 获取此持续时间内的当前位置。
          */
         public long getMaxProgress() {
             return mMetadata == null ? 0 :
                     mMetadata.getLong(MediaMetadataCompat.METADATA_KEY_DURATION);
         }
 
-        /** Returns whether the current media source is playing a media item. */
+        /**
+         * 返回当前媒体源是否正在播放媒体项。
+         */
         public boolean isPlaying() {
             return mState.getState() == PlaybackStateCompat.STATE_PLAYING;
         }
 
-        /** Returns whether the media source supports skipping to the next item. */
+        /**
+         * 返回媒体源是否支持跳到下一项。
+         */
         public boolean isSkipNextEnabled() {
             return (mState.getActions() & PlaybackStateCompat.ACTION_SKIP_TO_NEXT) != 0;
         }
 
-        /** Returns whether the media source supports skipping to the previous item. */
+        /**
+         * 返回媒体源是否支持跳到上一项。
+         */
         public boolean isSkipPreviousEnabled() {
             return (mState.getActions() & PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS) != 0;
         }
 
         /**
-         * Returns whether the media source supports seeking to a new location in the media stream.
+         * 返回媒体源是否支持在媒体流中寻找新位置。
          */
         public boolean isSeekToEnabled() {
             return (mState.getActions() & PlaybackStateCompat.ACTION_SEEK_TO) != 0;
         }
 
-        /** Returns whether the media source requires reserved space for the skip to next action. */
+        /**
+         * 返回媒体源是否需要为跳到下一个操作保留空间。
+         */
         public boolean isSkipNextReserved() {
             return mMediaController.getExtras() != null
                     && (mMediaController.getExtras().getBoolean(
@@ -463,7 +479,7 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         /**
-         * Returns whether the media source requires reserved space for the skip to previous action.
+         * 返回媒体源是否需要为跳到上一个操作保留空间。
          */
         public boolean iSkipPreviousReserved() {
             return mMediaController.getExtras() != null
@@ -473,7 +489,9 @@ public class PlaybackViewModel extends AndroidViewModel {
                     MediaConstants.PLAYBACK_SLOT_RESERVATION_SKIP_TO_PREV));
         }
 
-        /** Returns whether the media source is loading (e.g.: buffering, connecting, etc.). */
+        /**
+         * 返回媒体源是否正在加载（例如：缓冲、连接等）。
+         */
         public boolean isLoading() {
             int state = mState.getState();
             return state == PlaybackStateCompat.STATE_BUFFERING
@@ -485,28 +503,38 @@ public class PlaybackViewModel extends AndroidViewModel {
                     || state == PlaybackStateCompat.STATE_SKIPPING_TO_QUEUE_ITEM;
         }
 
-        /** See {@link PlaybackStateCompat#getErrorMessage}. */
+        /**
+         * 见 {@link PlaybackStateCompat#getErrorMessage}.
+         */
         public CharSequence getErrorMessage() {
             return mState.getErrorMessage();
         }
 
-        /** See {@link PlaybackStateCompat#getErrorCode()}. */
+        /**
+         * 见 {@link PlaybackStateCompat#getErrorCode()}.
+         */
         public int getErrorCode() {
             return mState.getErrorCode();
         }
 
-        /** See {@link PlaybackStateCompat#getActiveQueueItemId}. */
+        /**
+         * 见 {@link PlaybackStateCompat#getActiveQueueItemId}.
+         */
         public long getActiveQueueItemId() {
             return mState.getActiveQueueItemId();
         }
 
-        /** See {@link PlaybackStateCompat#getState}. */
+        /**
+         * 见 {@link PlaybackStateCompat#getState}.
+         */
         @PlaybackStateCompat.State
         public int getState() {
             return mState.getState();
         }
 
-        /** See {@link PlaybackStateCompat#getExtras}. */
+        /**
+         * 见 {@link PlaybackStateCompat#getExtras}.
+         */
         public Bundle getExtras() {
             return mState.getExtras();
         }
@@ -517,8 +545,8 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         /**
-         * Returns a sorted list of custom actions available. Call {@link
-         * RawCustomPlaybackAction#fetchDrawable(Context)} to get the appropriate icon Drawable.
+         * 返回可用自定义操作的排序列表。
+         * 调用{@link RawCustomPlaybackAction#fetchDrawable（Context）}以获得适当的可绘制图标。
          */
         public List<RawCustomPlaybackAction> getCustomActions() {
             List<RawCustomPlaybackAction> actions = new ArrayList<>();
@@ -559,11 +587,10 @@ public class PlaybackViewModel extends AndroidViewModel {
 
 
     /**
-     * Wraps the {@link android.media.session.MediaController.TransportControls TransportControls}
-     * for a {@link MediaControllerCompat} to send commands.
+     * 为 {@link MediaControllerCompat} 包装 {@link android.media.session.MediaController.TransportControls TransportControls} 以发送命令。
+     * TODO(arnaudberry) 这种包装有意义吗，因为我们仍然需要对包装进行空值检查？
+     * 我们应该在模型类上调用动作方法吗？
      */
-    // TODO(arnaudberry) does this wrapping make sense since we're still null checking the wrapper?
-    // Should we call action methods on the model class instead ?
     public class PlaybackController {
         private final MediaControllerCompat mMediaController;
 
@@ -571,45 +598,30 @@ public class PlaybackViewModel extends AndroidViewModel {
             mMediaController = mediaController;
         }
 
-        /**
-         * Sends a 'play' command to the media source
-         */
         public void play() {
             if (mMediaController != null) {
                 mMediaController.getTransportControls().play();
             }
         }
 
-        /**
-         * Sends a 'skip previews' command to the media source
-         */
         public void skipToPrevious() {
             if (mMediaController != null) {
                 mMediaController.getTransportControls().skipToPrevious();
             }
         }
 
-        /**
-         * Sends a 'skip next' command to the media source
-         */
         public void skipToNext() {
             if (mMediaController != null) {
                 mMediaController.getTransportControls().skipToNext();
             }
         }
 
-        /**
-         * Sends a 'pause' command to the media source
-         */
         public void pause() {
             if (mMediaController != null) {
                 mMediaController.getTransportControls().pause();
             }
         }
 
-        /**
-         * Sends a 'stop' command to the media source
-         */
         public void stop() {
             if (mMediaController != null) {
                 mMediaController.getTransportControls().stop();
@@ -617,9 +629,9 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         /**
-         * Moves to a new location in the media stream
+         * 移动到媒体流中的新位置
          *
-         * @param pos Position to move to, in milliseconds.
+         * @param pos 要移动到的位置，以毫秒为单位。
          */
         public void seekTo(long pos) {
             if (mMediaController != null) {
@@ -628,16 +640,15 @@ public class PlaybackViewModel extends AndroidViewModel {
                         .setState(oldState.getState(), pos, oldState.getPlaybackSpeed())
                         .build();
                 mMediaControllerCallback.onPlaybackStateChanged(newState);
-
                 mMediaController.getTransportControls().seekTo(pos);
             }
         }
 
         /**
-         * Sends a custom action to the media source
+         * 向媒体源发送自定义操作
          *
-         * @param action identifier of the custom action
-         * @param extras additional data to send to the media source.
+         * @param action 自定义动作的动作标识符
+         * @param extras 附加额外数据以发送到媒体源。
          */
         public void doCustomAction(String action, Bundle extras) {
             if (mMediaController == null) return;
@@ -652,20 +663,17 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         /**
-         * Starts playing a given media item.
+         * 开始播放给定的媒体项目。
          */
         public void playItem(MediaItemMetadata item) {
             if (mMediaController != null) {
-                // Do NOT pass the extras back as that's not the official API and isn't supported
-                // in media2, so apps should not rely on this.
+                // 不要将额外内容传回，因为这不是官方 API，并且在 media2 中不受支持，因此应用程序不应依赖于此。
                 mMediaController.getTransportControls().playFromMediaId(item.getId(), null);
             }
         }
 
         /**
-         * Skips to a particular item in the media queue. This id is {@link
-         * MediaItemMetadata#mQueueId} of the items obtained through {@link
-         * PlaybackViewModel#getQueue()}.
+         * 跳到媒体队列中的特定项目。 此 id 是通过 {@link PlaybackViewModel#getQueue()} 获得的项目的 {@link MediaItemMetadata#mQueueId}。
          */
         public void skipToQueueItem(long queueId) {
             if (mMediaController != null) {
@@ -673,9 +681,6 @@ public class PlaybackViewModel extends AndroidViewModel {
             }
         }
 
-        /**
-         * Prepares the current media source for playback.
-         */
         public void prepare() {
             if (mMediaController != null) {
                 mMediaController.getTransportControls().prepare();
@@ -684,18 +689,12 @@ public class PlaybackViewModel extends AndroidViewModel {
     }
 
     /**
-     * Abstract representation of a custom playback action. A custom playback action represents a
-     * visual element that can be used to trigger playback actions not included in the standard
-     * {@link PlaybackController} class. Custom actions for the current media source are exposed
-     * through {@link PlaybackStateWrapper#getCustomActions}
-     * <p>
-     * Does not contain a {@link Drawable} representation of the icon. Instances of this object
-     * should be converted to a {@link CustomPlaybackAction} via {@link
-     * RawCustomPlaybackAction#fetchDrawable(Context)} for display.
+     * 自定义播放操作的抽象表示。 自定义播放操作表示可用于触发标准 {@link PlaybackController} 类中未包含的播放操作的视觉元素。
+     * 当前媒体源的自定义操作通过 {@linkPlaybackStateWrapper#getCustomActions} 公开
+     * 不包含图标的 {@link Drawable} 表示。 此对象的实例应通过 {@link RawCustomPlaybackAction#fetchDrawable(Context)} 转换为 {@link CustomPlaybackAction} 以进行显示。
      */
     public static class RawCustomPlaybackAction {
-        // TODO (keyboardr): This class (and associtated translation code) will be merged with
-        // CustomPlaybackAction in a future CL.
+        // TODO (keyboardr)：这个类（和相关的翻译代码）将在未来的 CL 中与 CustomPlaybackAction 合并。
         /**
          * Icon to display for this custom action
          */
@@ -721,8 +720,8 @@ public class PlaybackViewModel extends AndroidViewModel {
          * Creates a custom action
          */
         public RawCustomPlaybackAction(int icon, String packageName,
-                @NonNull String action,
-                @Nullable Bundle extras) {
+                                       @NonNull String action,
+                                       @Nullable Bundle extras) {
             mIcon = icon;
             mPackageName = packageName;
             mAction = action;
@@ -748,12 +747,9 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         /**
-         * Converts this {@link RawCustomPlaybackAction} into a {@link CustomPlaybackAction} by
-         * fetching the appropriate drawable for the icon.
-         *
-         * @param context Context into which the icon will be drawn
-         * @return the converted CustomPlaybackAction or null if appropriate {@link Resources}
-         * cannot be obtained
+         * 通过获取图标的适当可绘制对象，将此 {@link RawCustomPlaybackAction} 转换为 {@link CustomPlaybackAction}。
+         * @param context 图标将被绘制到的上下文
+         * @return 转换后的 CustomPlaybackAction 或 null 如果无法获得合适的 {@link Resources}
          */
         @Nullable
         public CustomPlaybackAction fetchDrawable(@NonNull Context context) {
@@ -765,11 +761,7 @@ public class PlaybackViewModel extends AndroidViewModel {
                 if (resources == null) {
                     return null;
                 } else {
-                    // the resources may be from another package. we need to update the
-                    // configuration
-                    // using the context from the activity so we get the drawable from the
-                    // correct DPI
-                    // bucket.
+                    // 资源可能来自另一个包。 我们需要使用活动中的上下文更新配置，以便从正确的 DPI 存储桶中获取可绘制对象。
                     resources.updateConfiguration(context.getResources().getConfiguration(),
                             context.getResources().getDisplayMetrics());
                     icon = resources.getDrawable(mIcon, null);
