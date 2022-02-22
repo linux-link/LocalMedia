@@ -7,6 +7,6 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "LocalMedia"
-include ':service'
-include ':media'
+include ':Service'
+include ':Media'
 include ':CommonMedia'
