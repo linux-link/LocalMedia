@@ -53,8 +53,7 @@ public class MediaConnectorService extends LifecycleService {
         super.onCreate();
         NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
                 NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_NONE);
-        NotificationManager manager =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         manager.createNotificationChannel(channel);
     }
 

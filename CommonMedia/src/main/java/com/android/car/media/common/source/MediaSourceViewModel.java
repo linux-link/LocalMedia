@@ -48,13 +48,14 @@ public class MediaSourceViewModel extends AndroidViewModel {
     private final Car mCar;
     private CarMediaManager mCarMediaManager;
 
-    // Primary media source.
+    // 主要媒体来源.
     private final MutableLiveData<MediaSource> mPrimaryMediaSource = dataOf(null);
 
-    // Browser for the primary media source and its connection state.
+    // 主要媒体源及其连接状态的浏览器.
     private final MutableLiveData<BrowsingState> mBrowsingState = dataOf(null);
 
     private final Handler mHandler;
+    private final InputFactory mInputFactory;
     private final CarMediaManager.MediaSourceChangedListener mMediaSourceListener;
 
     /**
@@ -82,8 +83,6 @@ public class MediaSourceViewModel extends AndroidViewModel {
 
     /**
      * 创建MediaSourceViewModel的新实例
-     *
-     * @see AndroidViewModel
      */
     private MediaSourceViewModel(@NonNull Application application, int mode) {
         this(application, mode, new InputFactory() {
@@ -112,9 +111,13 @@ public class MediaSourceViewModel extends AndroidViewModel {
         });
     }
 
-    private final InputFactory mInputFactory;
     private final MediaBrowserConnector mBrowserConnector;
-    private final MediaBrowserConnector.Callback mBrowserCallback = mBrowsingState::setValue;
+    private final MediaBrowserConnector.Callback mBrowserCallback = new MediaBrowserConnector.Callback() {
+        @Override
+        public void onBrowserConnectionChanged(@NonNull BrowsingState state) {
+            mBrowsingState.setValue(state);
+        }
+    };
 
     @VisibleForTesting
     MediaSourceViewModel(@NonNull Application application, int mode,
@@ -127,8 +130,17 @@ public class MediaSourceViewModel extends AndroidViewModel {
         mBrowserConnector = inputFactory.createMediaBrowserConnector(application, mBrowserCallback);
 
         mHandler = new Handler(application.getMainLooper());
-        mMediaSourceListener = componentName -> mHandler.post(
-                () -> updateModelState(mInputFactory.getMediaSource(componentName)));
+        mMediaSourceListener = new CarMediaManager.MediaSourceChangedListener() {
+            @Override
+            public void onMediaSourceChanged(ComponentName componentName) {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateModelState(mInputFactory.getMediaSource(componentName));
+                    }
+                });
+            }
+        };
 
         try {
             mCarMediaManager = mInputFactory.getCarMediaManager(mCar);
@@ -174,15 +186,13 @@ public class MediaSourceViewModel extends AndroidViewModel {
 
     private void updateModelState(MediaSource newMediaSource) {
         MediaSource oldMediaSource = mPrimaryMediaSource.getValue();
-
         if (Objects.equals(oldMediaSource, newMediaSource)) {
             return;
         }
-
-        // Broadcast the new source
+        // 广播新的源
         mPrimaryMediaSource.setValue(newMediaSource);
 
-        // Recompute dependent values
+        // 重新计算相关值
         if (newMediaSource != null) {
             mBrowserConnector.connectTo(newMediaSource);
         }

@@ -58,42 +58,19 @@ public class MediaItemsRepository {
     /** One instance per MEDIA_SOURCE_MODE. */
     private static MediaItemsRepository[] sInstances = new MediaItemsRepository[2];
 
-    /** Returns the MediaItemsRepository "singleton" tied to the application for the given mode. */
+    /** 返回与给定模式的应用程序关联的 MediaItemsRepository“单例”。 */
     public static MediaItemsRepository get(@NonNull Application application, int mode) {
         if (sInstances[mode] == null) {
             sInstances[mode] = new MediaItemsRepository(
-                    MediaSourceViewModel.get(application, mode).getBrowsingState());
+                    MediaSourceViewModel.get(application, mode).getBrowsingState()
+            );
         }
         return sInstances[mode];
     }
 
-    /** The live data providing the updates for a query. */
-    public static class MediaItemsLiveData
-            extends LiveData<FutureData<List<MediaItemMetadata>>> {
-
-        private MediaItemsLiveData() {
-            this(true);
-        }
-
-        private MediaItemsLiveData(boolean initAsLoading) {
-            if (initAsLoading) {
-                setLoading();
-            } else {
-                clear();
-            }
-        }
-
-        private void onDataLoaded(List<MediaItemMetadata> old, List<MediaItemMetadata> list) {
-            setValue(FutureData.newLoadedData(old, list));
-        }
-
-        private void setLoading() {
-            setValue(FutureData.newLoadingData());
-        }
-
-        private void clear() {
-            setValue(null);
-        }
+    @VisibleForTesting
+    public MediaItemsRepository(LiveData<BrowsingState> browsingState) {
+        browsingState.observeForever(this::onMediaBrowsingStateChanged);
     }
 
     private static class MediaChildren {
@@ -119,11 +96,6 @@ public class MediaItemsRepository {
 
     private String mSearchQuery;
 
-    @VisibleForTesting
-    public MediaItemsRepository(LiveData<BrowsingState> browsingState) {
-        browsingState.observeForever(this::onMediaBrowsingStateChanged);
-    }
-
     /**
      * Rebroadcasts browsing state changes before the repository takes any action on them.
      */
@@ -147,23 +119,51 @@ public class MediaItemsRepository {
         return mSearchMediaItems;
     }
 
-    /** Returns the children of the given node. */
+    /** 返回给定节点的子数据。 */
     public MediaItemsLiveData getMediaChildren(String nodeId) {
         PerMediaSourceCache cache = getCache();
         MediaChildren items = cache.mChildrenByNodeId.get(nodeId);
         if (items == null) {
+            // 将节点缓存起来
             items = new MediaChildren(nodeId);
             cache.mChildrenByNodeId.put(nodeId, items);
         }
-
-        // Always refresh the subscription (to work around bugs in media apps).
+        // 始终刷新订阅（以解决媒体应用程序中的错误）。
         mBrowsingState.mBrowser.unsubscribe(nodeId);
         mBrowsingState.mBrowser.subscribe(nodeId, mBrowseCallback);
-
         return items.mLiveData;
     }
 
-    /** Sets the search query. Results will be given through {@link #getSearchMediaItems}. */
+    private final SubscriptionCallback mBrowseCallback = new SubscriptionCallback() {
+
+        @Override
+        public void onChildrenLoaded(@NonNull String parentId,
+                                     @NonNull List<MediaBrowserCompat.MediaItem> children) {
+            onBrowseData(parentId, children.stream()
+                    .filter(Objects::nonNull)
+                    .map(MediaItemMetadata::new)
+                    .collect(Collectors.toList()));
+        }
+
+        @Override
+        public void onChildrenLoaded(@NonNull String parentId,
+                                     @NonNull List<MediaBrowserCompat.MediaItem> children,
+                                     @NonNull Bundle options) {
+            onChildrenLoaded(parentId, children);
+        }
+
+        @Override
+        public void onError(@NonNull String parentId) {
+            onBrowseData(parentId, null);
+        }
+
+        @Override
+        public void onError(@NonNull String parentId, @NonNull Bundle options) {
+            onError(parentId);
+        }
+    };
+
+    /** 设置搜索查询。 结果将通过 {@link #getSearchMediaItems} 给出。 */
     public void setSearchQuery(String query) {
         mSearchQuery = query;
         if (TextUtils.isEmpty(mSearchQuery)) {
@@ -173,6 +173,28 @@ public class MediaItemsRepository {
             mBrowsingState.mBrowser.search(mSearchQuery, null, mSearchCallback);
         }
     }
+
+    private final SearchCallback mSearchCallback = new SearchCallback() {
+        @Override
+        public void onSearchResult(@NonNull String query, Bundle extras,
+                                   @NonNull List<MediaBrowserCompat.MediaItem> items) {
+            super.onSearchResult(query, extras, items);
+            if (Objects.equals(mSearchQuery, query)) {
+                onSearchData(items.stream()
+                        .filter(Objects::nonNull)
+                        .map(MediaItemMetadata::new)
+                        .collect(toList()));
+            }
+        }
+
+        @Override
+        public void onError(@NonNull String query, Bundle extras) {
+            super.onError(query, extras);
+            if (Objects.equals(mSearchQuery, query)) {
+                onSearchData(null);
+            }
+        }
+    };
 
     private void clearSearchResults() {
         mSearchMediaItems.clear();
@@ -189,6 +211,7 @@ public class MediaItemsRepository {
             return;
         }
         mBrowsingStateLiveData.setValue(mBrowsingState);
+        // 监听 连接状态
         switch (mBrowsingState.mConnectionStatus) {
             case CONNECTING:
                 mRootMediaItems.setLoading();
@@ -220,7 +243,7 @@ public class MediaItemsRepository {
         return cache;
     }
 
-    /** Does NOT clear the cache. */
+    /** 不清除缓存. */
     private void unsubscribeNodes() {
         PerMediaSourceCache cache = getCache();
         for (String nodeId : cache.mChildrenByNodeId.keySet()) {
@@ -228,7 +251,7 @@ public class MediaItemsRepository {
         }
     }
 
-    /** Does NOT unsubscribe nodes. */
+    /** 不取消订阅节点. */
     private void clearNodes() {
         PerMediaSourceCache cache = getCache();
         cache.mChildrenByNodeId.clear();
@@ -243,9 +266,9 @@ public class MediaItemsRepository {
             }
             return;
         }
-
         List<MediaItemMetadata> old = children.mPreviousValue;
         children.mPreviousValue = list;
+        // MediaItemsLiveData#onDataLoaded 可以视为带状态的setValue
         children.mLiveData.onDataLoaded(old, list);
 
         if (Objects.equals(parentId, cache.mRootId)) {
@@ -257,54 +280,36 @@ public class MediaItemsRepository {
         mSearchMediaItems.onDataLoaded(null, list);
     }
 
-    private final SubscriptionCallback mBrowseCallback = new SubscriptionCallback() {
+    /**
+     * 为查询提供更新的实时数据。
+     * FutureData：保存具有加载状态的数据的类，以及可选的数据的先前版本。
+     */
+    public static class MediaItemsLiveData extends LiveData<FutureData<List<MediaItemMetadata>>> {
 
-        @Override
-        public void onChildrenLoaded(@NonNull String parentId,
-                @NonNull List<MediaBrowserCompat.MediaItem> children) {
-            onBrowseData(parentId, children.stream()
-                    .filter(Objects::nonNull)
-                    .map(MediaItemMetadata::new)
-                    .collect(Collectors.toList()));
+        private MediaItemsLiveData() {
+            this(true);
         }
 
-        @Override
-        public void onChildrenLoaded(@NonNull String parentId,
-                @NonNull List<MediaBrowserCompat.MediaItem> children,
-                @NonNull Bundle options) {
-            onChildrenLoaded(parentId, children);
-        }
-
-        @Override
-        public void onError(@NonNull String parentId) {
-            onBrowseData(parentId, null);
-        }
-
-        @Override
-        public void onError(@NonNull String parentId, @NonNull Bundle options) {
-            onError(parentId);
-        }
-    };
-
-    private final SearchCallback mSearchCallback = new SearchCallback() {
-        @Override
-        public void onSearchResult(@NonNull String query, Bundle extras,
-                @NonNull List<MediaBrowserCompat.MediaItem> items) {
-            super.onSearchResult(query, extras, items);
-            if (Objects.equals(mSearchQuery, query)) {
-                onSearchData(items.stream()
-                        .filter(Objects::nonNull)
-                        .map(MediaItemMetadata::new)
-                        .collect(toList()));
+        private MediaItemsLiveData(boolean initAsLoading) {
+            if (initAsLoading) {
+                setLoading();
+            } else {
+                clear();
             }
         }
 
-        @Override
-        public void onError(@NonNull String query, Bundle extras) {
-            super.onError(query, extras);
-            if (Objects.equals(mSearchQuery, query)) {
-                onSearchData(null);
-            }
+        // 更新数据
+        private void onDataLoaded(List<MediaItemMetadata> old, List<MediaItemMetadata> list) {
+            setValue(FutureData.newLoadedData(old, list));
         }
-    };
+
+        // 设定正在加载
+        private void setLoading() {
+            setValue(FutureData.newLoadingData());
+        }
+
+        private void clear() {
+            setValue(null);
+        }
+    }
 }

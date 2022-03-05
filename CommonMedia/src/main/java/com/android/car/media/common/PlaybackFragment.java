@@ -37,11 +37,13 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.arch.core.util.Function;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.Transformations;
 import androidx.lifecycle.ViewModelProviders;
 
 import com.android.car.apps.common.BitmapUtils;
@@ -82,7 +84,7 @@ public class PlaybackFragment extends Fragment {
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
-            Bundle savedInstanceState) {
+                             Bundle savedInstanceState) {
         FragmentActivity activity = requireActivity();
         mCar = Car.createCar(activity);
         mCarPackageManager = (CarPackageManager) mCar.getCarManager(Car.PACKAGE_SERVICE);
@@ -237,7 +239,7 @@ public class PlaybackFragment extends Fragment {
         }
 
         void init(FragmentActivity activity, MediaSourceViewModel mediaSourceViewModel,
-                PlaybackViewModel playbackViewModel, MediaItemsRepository mediaItemsRepository) {
+                  PlaybackViewModel playbackViewModel, MediaItemsRepository mediaItemsRepository) {
             if (mMediaSourceViewModel == mediaSourceViewModel
                     && mPlaybackViewModel == playbackViewModel
                     && mMediaItemsRepository == mediaItemsRepository) {
@@ -246,15 +248,37 @@ public class PlaybackFragment extends Fragment {
             mPlaybackViewModel = playbackViewModel;
             mMediaSourceViewModel = mediaSourceViewModel;
             mMediaItemsRepository = mediaItemsRepository;
+
             mMediaSource = mMediaSourceViewModel.getPrimaryMediaSource();
             // 媒体源APP名字
-            mAppName = mapNonNull(mMediaSource, MediaSource::getDisplayName);
+            mAppName = mapNonNull(mMediaSource, new Function<MediaSource, CharSequence>() {
+                @Override
+                public CharSequence apply(MediaSource mediaSource) {
+                    return mediaSource.getDisplayName();
+                }
+            });
             // 媒体源APP图标
-            mAppIcon = mapNonNull(mMediaSource, MediaSource::getCroppedPackageIcon);
+            mAppIcon = mapNonNull(mMediaSource, new Function<MediaSource, Bitmap>() {
+                @Override
+                public Bitmap apply(MediaSource mediaSource) {
+                    return mediaSource.getCroppedPackageIcon();
+                }
+            });
+
             // 当前播放的媒体的title
-            mTitle = mapNonNull(playbackViewModel.getMetadata(), MediaItemMetadata::getTitle);
+            mTitle = mapNonNull(playbackViewModel.getMetadata(), new Function<MediaItemMetadata, CharSequence>() {
+                @Override
+                public CharSequence apply(MediaItemMetadata mediaItemMetadata) {
+                    return mediaItemMetadata.getTitle();
+                }
+            });
             // 当前播放的媒体的子title
-            mSubtitle = mapNonNull(playbackViewModel.getMetadata(), MediaItemMetadata::getArtist);
+            mSubtitle = mapNonNull(playbackViewModel.getMetadata(), new Function<MediaItemMetadata, CharSequence>() {
+                @Override
+                public CharSequence apply(MediaItemMetadata mediaItemMetadata) {
+                    return mediaItemMetadata.getSubtitle();
+                }
+            });
             // 媒体列表数据
             mMediaItemsRepository.getRootMediaItems()
                     .observe(activity, this::onRootMediaItemsUpdate);
@@ -285,11 +309,37 @@ public class PlaybackFragment extends Fragment {
                 mBrowseTreeHasChildren.setValue(null);
                 return;
             }
-            List<MediaItemMetadata> items =
-                    MediaBrowserViewModelImpl.filterItems(/*forRoot*/ true, data.getData());
+            List<MediaItemMetadata> items = MediaBrowserViewModelImpl.filterItems(/*forRoot*/ true, data.getData());
 
             boolean browseTreeHasChildren = items != null && !items.isEmpty();
             mBrowseTreeHasChildren.setValue(browseTreeHasChildren);
+        }
+
+        /**
+         * 类似于 Transformations.map(LiveData, Function)，但在 source 发出 null 时发出 nullValue。
+         * func 的输入可能被视为不可为空。
+         */
+        public static <T, R> LiveData<R> mapNonNull(@NonNull LiveData<T> source,
+                                                    @NonNull Function<T, R> func) {
+            return mapNonNull(source, null, func);
+        }
+
+        /**
+         * 类似于 Transformations.map(LiveData, Function)，但在 source 发出 null 时发出 nullValue。
+         * func 的输入可能被视为不可为空。
+         */
+        public static <T, R> LiveData<R> mapNonNull(@NonNull LiveData<T> source, @Nullable R nullValue,
+                                                    @NonNull Function<T, R> func) {
+            return Transformations.map(source, new Function<T, R>() {
+                @Override
+                public R apply(T value) {
+                    if (value == null) {
+                        return nullValue;
+                    } else {
+                        return func.apply(value);
+                    }
+                }
+            });
         }
     }
 }

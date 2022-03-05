@@ -49,7 +49,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * TODO: Consider doing all content provider accesses and player operations asynchronously.
+ * TODO：考虑异步执行所有内容提供程序访问和播放器操作。
  */
 public class Player extends MediaSession.Callback {
     private static final String TAG = "LMPlayer";
@@ -119,8 +119,7 @@ public class Player extends MediaSession.Callback {
                 .build();
 
         // 初始化Notification
-        mNotificationManager =
-                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        mNotificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         // 媒体通知有两种形式，播放时需要显示暂停和跳过的控件，暂停时需要显示播放和跳过的控件。
         // 预先为这两个设置预先填充的构建器。
         Notification.Action prevAction = makeNotificationAction(

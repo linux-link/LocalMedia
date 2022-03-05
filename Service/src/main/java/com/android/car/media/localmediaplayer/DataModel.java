@@ -45,12 +45,6 @@ import java.util.Set;
 public class DataModel {
     private static final String TAG = "LMBDataModel";
 
-    private static final String QUERY_BY_KEY_WHERE_CLAUSE =
-            AudioColumns.ALBUM_KEY + "= ? or "
-                    + AudioColumns.ARTIST_KEY + " = ? or "
-                    + AudioColumns.TITLE_KEY + " = ? or "
-                    + AudioColumns.DATA + " like ?";
-
     private static final String EXTERNAL = "external";
     private static final String INTERNAL = "internal";
 
@@ -191,17 +185,20 @@ public class DataModel {
         return metadata.build();
     }
 
-    /**
-     * 注意：这会清除队列。 在调用此方法之前，应该拥有队列的本地备份。
-     */
+    private static final String QUERY_BY_KEY_WHERE_CLAUSE =
+            AudioColumns.ALBUM_KEY + "= ? or "
+                    + AudioColumns.ARTIST_KEY + " = ? or "
+                    + AudioColumns.TITLE_KEY + " = ? or "
+                    + AudioColumns.DATA + " like ?";
+
+    // 注意：这会清除队列。 在调用此方法之前，应该拥有队列的本地备份。
     public void onQueryByKey(String lastCategory, String parentId, Result<List<MediaItem>> result) {
         mQueue.clear();
         QueryTask.Builder query = new QueryTask.Builder()
                 .setResolver(mResolver)
                 .setResult(result);
-
+        // Genre（流派）来自不同的表，并且不使用通常媒体表中的 where 子句，因此我们需要有这个条件。
         if (LocalMediaBrowserService.GENRES_ID.equals(lastCategory)) {
-            // Genre来自不同的表，并且不使用通常媒体表中的 where 子句，因此我们需要有这个条件。
             try {
                 long id = Long.parseLong(parentId);
                 query.setUri(new Uri[] {
@@ -227,8 +224,7 @@ public class DataModel {
         queryInBackground(result, query.build());
     }
 
-    // 这个异步任务与所有其他任务非常相似，感觉它可以统一，但又足够不同，统一它会使这两种情况的代码看起来非常奇怪并且过度参数化，
-    // 因此有可能变得更加冗长，这是 以可理解性的名义分开.
+    // 为了便于理解代码，没有和QueryTask封装在一起。如果强行写在一起，看起来非常奇怪并且过度参数化，有可能变得更加冗长
     private static class FilesystemListTask extends AsyncTask<Void, Void, Void> {
         private static final String[] COLUMNS = { AudioColumns.DATA };
         private Result<List<MediaItem>> mResult;
@@ -258,7 +254,6 @@ public class DataModel {
                             if (fileNameStart < 0) {
                                 continue;
                             }
-
                             String dirPath = fullPath.substring(0, fileNameStart);
                             paths.add(dirPath);
                         }
@@ -277,6 +272,7 @@ public class DataModel {
             for (String path : paths) {
                 int dirNameStart = path.lastIndexOf(File.separator) + 1;
                 String dirName = path.substring(dirNameStart, path.length());
+                //在封装为 MediaItem
                 MediaDescription description = new MediaDescription.Builder()
                         .setMediaId(path + "%")  // 在类似查询中使用。
                         .setTitle(dirName)
@@ -319,9 +315,7 @@ public class DataModel {
         @Override
         protected Void doInBackground(Void... voids) {
             List<MediaItem> results = new ArrayList<>();
-
             long idx = 0;
-
             Cursor cursor = null;
             for (Uri uri : mUris) {
                 try {
@@ -361,7 +355,7 @@ public class DataModel {
                         }
                     }
                 } catch (SQLiteException e) {
-                    // 有时，如果媒体扫描仪尚未看到该类型的数据，则表不存在。
+                    // 有时，如果媒体扫描尚未看到该类型的数据，则表不存在。
                     // 例如，在第一次遇到具有流派的歌曲之前，流派表似乎根本不存在。
                     // 如果我们遇到异常，则永远不会发送结果导致另一端挂断，这是一件坏事。
                     // 相反，我们可以保持弹性并返回一个空列表。
@@ -372,7 +366,6 @@ public class DataModel {
                     }
                 }
             }
-
             mResult.sendResult(results);
             return null;  // 忽略.
         }
